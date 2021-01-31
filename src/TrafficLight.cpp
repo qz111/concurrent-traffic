@@ -23,8 +23,8 @@ void MessageQueue<T>::send(T &&msg)
 {
     // FP.4a : The method send should use the mechanisms std::lock_guard<std::mutex> 
     // as well as _condition.notify_one() to add a new message to the queue and afterwards send a notification.
-    std::lock_guard<std::mutex> uLock(_mutex);
-    _queue.emplace_back(std::move(msg));
+    std::lock_guard<std::mutex> gLock(_mutex);
+    _queue.push_back(std::move(msg));
     _condition.notify_one();
 }
 
@@ -48,8 +48,9 @@ void TrafficLight::waitForGreen()
         auto message=_queue->receive();
         if(message==TrafficLightPhase::green)
         {
-            break;
+            return;
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 
@@ -83,21 +84,24 @@ void TrafficLight::cycleThroughPhases()
 
         // compute time difference to stop watch
         long timeSinceLastUpdate = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - lastUpdate).count();
-        ftr=std::async(&MessageQueue<TrafficLightPhase>::send, _queue, std::move(_currentPhase));
-        std::random_device rd;
-        std::mt19937 eng(rd());
-        std::uniform_int_distribution<> distr(4000,6000);
-        std::this_thread::sleep_for(std::chrono::milliseconds(distr(eng)));
-        if(_currentPhase==TrafficLightPhase::red)
+        if(timeSinceLastUpdate>=1)
         {
-            _currentPhase=TrafficLightPhase::green;
+            _queue->send(std::move(_currentPhase));
+            std::random_device rd;
+            std::mt19937 eng(rd());
+            std::uniform_int_distribution<> distr(4000,6000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(distr(eng)));
+            if(_currentPhase==TrafficLightPhase::red)
+            {
+                _currentPhase=TrafficLightPhase::green;
+            }
+            else
+            {
+                _currentPhase=TrafficLightPhase::red;
+            }
+            lastUpdate = std::chrono::system_clock::now();
         }
-        else
-        {
-            _currentPhase=TrafficLightPhase::red;
-        }
-        lastUpdate = std::chrono::system_clock::now();
     }
-    ftr.wait();
+    
 }
 
